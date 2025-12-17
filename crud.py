@@ -33,7 +33,9 @@ def create_camera(session: Session, camera_info: CreateAndUpdateCamera) -> Camer
 
 
 # Function to update details of the camera
-def update_camera(session: Session, _id: int, info_update: CreateAndUpdateCamera) -> Camera:
+def update_camera(
+    session: Session, _id: int, info_update: CreateAndUpdateCamera
+) -> Camera:
     camera = get_camera_by_id(session, _id)
 
     if camera is None:
@@ -91,7 +93,9 @@ def create_person(session: Session, person_info: CreateAndUpdatePerson) -> Perso
 
 
 # Function to update details of the person
-def update_person(session: Session, _id: int, info_update: CreateAndUpdatePerson) -> Person:
+def update_person(
+    session: Session, _id: int, info_update: CreateAndUpdatePerson
+) -> Person:
     person = get_person_by_id(session, _id)
 
     if person is None:
@@ -154,12 +158,13 @@ def reset_capture_flag(session: Session, _id: int):
 def create_db():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    engine = create_engine('mysql+pymysql://root:password@iftm_db/')
+
+    engine = create_engine("mysql+pymysql://root:password@reconhecimento_facial_db/")
     Session = sessionmaker(engine)
     try:
         with Session.begin() as session:
-            session.execute('CREATE DATABASE iftm;')
-            session.execute('use iftm;')
+            session.execute("CREATE DATABASE iftm;")
+            session.execute("use iftm;")
             session.execute("""create table camera(
                             camera_id int auto_increment primary key,
                             user varchar(50),

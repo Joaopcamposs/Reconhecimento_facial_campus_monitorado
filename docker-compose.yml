@@ -1,16 +1,18 @@
-version: '3.9'
-
 services:
-  db:
-    container_name: iftm_db
+  reconhecimento_facial_db:
+    container_name: reconhecimento_facial_db
     image: mysql:latest
     ports:
       - "3309:3306"
     environment:
       MYSQL_ROOT_PASSWORD: password
 
-  api:
-    container_name: recon_api
-    build: .
+  reconhecimento_facial_api:
+    container_name: reconhecimento_facial_api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - reconhecimento_facial_db
     ports:
       - "8004:8000"

@@ -1,0 +1,15 @@
+[project]
+name = "reconhecimento-facial-campus-monitorado"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.75.2",
+    "uvicorn==0.17.6",
+    "PyMySQL==1.0.2",
+    "SQLAlchemy==1.4.35",
+    "cryptography==37.0.0",
+    "opencv-contrib-python==4.5.5.64",
+    "ruff>=0.14.9",
+]

@@ -26,6 +26,5 @@ class CreateAndUpdatePerson(BaseModel):
 
 # TO support list and get APIs
 class Persons(CreateAndUpdatePerson):
-
     class Config:
         orm_mode = True

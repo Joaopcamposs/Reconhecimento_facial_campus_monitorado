@@ -27,8 +27,13 @@ async def stream_facial_recognition(session: Session, id_camera: int):
     except CameraNotFound:
         image = cv2.imread("camera_nao_encontrada.jpg")
         (flag, encodedImage) = cv2.imencode(".jpg", image)
-        yield b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n'
-    cameraIP = cv2.VideoCapture(f'rtsp://{camera.user}:{camera.password}@{camera.camera_ip}/')
+        yield (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
+        )
+    cameraIP = cv2.VideoCapture(
+        f"rtsp://{camera.user}:{camera.password}@{camera.camera_ip}/"
+    )
     # cameraIP = cv2.VideoCapture(0)  #Hardcoded WebCam
     if camera:
         while camera.status == CameraStatus.on:
@@ -36,23 +41,40 @@ async def stream_facial_recognition(session: Session, id_camera: int):
             if connected:
                 try:
                     gray_image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    detected_faces = faceDetector.detectMultiScale(gray_image, scaleFactor=1.5, minSize=(30, 30))
-                    for (x, y, l, a) in detected_faces:
-                        face_image = cv2.resize(gray_image[y:y + a, x:x + l], (width, height))
+                    detected_faces = faceDetector.detectMultiScale(
+                        gray_image, scaleFactor=1.5, minSize=(30, 30)
+                    )
+                    for x, y, l, a in detected_faces:
+                        face_image = cv2.resize(
+                            gray_image[y : y + a, x : x + l], (width, height)
+                        )
                         cv2.rectangle(frame, (x, y), (x + l, y + a), (0, 0, 255), 2)
                         id, trust = recognizer.predict(face_image)
 
                         name = verifyPerson(session, id)
 
-                        cv2.putText(frame, name, (x, y + (a + 30)), font, 2, (0, 0, 255))
-                        cv2.putText(frame, str(f'Confianca: {round(trust, 2)}%'), (x, y + (a + 50)), font, 1,
-                                    (0, 0, 255))
+                        cv2.putText(
+                            frame, name, (x, y + (a + 30)), font, 2, (0, 0, 255)
+                        )
+                        cv2.putText(
+                            frame,
+                            str(f"Confianca: {round(trust, 2)}%"),
+                            (x, y + (a + 50)),
+                            font,
+                            1,
+                            (0, 0, 255),
+                        )
 
                     # resize image (optional)
                     frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
 
                     (flag, encodedImage) = cv2.imencode(".jpg", frame)
-                    yield b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n'
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n"
+                        + bytearray(encodedImage)
+                        + b"\r\n"
+                    )
                 except Exception as e:
                     print(e)
             session.commit()
@@ -62,6 +84,9 @@ async def stream_facial_recognition(session: Session, id_camera: int):
         try:
             image = cv2.imread("camera_desligada.jpg")
             (flag, encodedImage) = cv2.imencode(".jpg", image)
-            yield b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n'
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
+            )
         except Exception as e:
             print(e)

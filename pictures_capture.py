@@ -1,8 +1,14 @@
 import cv2
 import numpy as np
 from sqlalchemy.orm import Session
-from crud import get_camera_by_id, CameraNotFound, create_person, get_all_persons, \
-    get_controller_by_id, reset_capture_flag
+from crud import (
+    get_camera_by_id,
+    CameraNotFound,
+    create_person,
+    get_all_persons,
+    get_controller_by_id,
+    reset_capture_flag,
+)
 from schema import CreateAndUpdatePerson
 
 # Parameters for facial recognition
@@ -31,8 +37,13 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
     except CameraNotFound:
         image = cv2.imread("camera_nao_encontrada.jpg")
         (flag, encodedImage) = cv2.imencode(".jpg", image)
-        yield b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n'
-    cameraIP = cv2.VideoCapture(f'rtsp://{camera.user}:{camera.password}@{camera.camera_ip}/')
+        yield (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
+        )
+    cameraIP = cv2.VideoCapture(
+        f"rtsp://{camera.user}:{camera.password}@{camera.camera_ip}/"
+    )
     # cameraIP = cv2.VideoCapture(0)  #Hardcoded WebCam
     if camera:
         while samples <= samples_number:
@@ -40,21 +51,46 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
             if connected:
                 try:
                     gray_image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    detected_faces = classifier.detectMultiScale(gray_image, scaleFactor=1.5, minSize=(150, 150))
+                    detected_faces = classifier.detectMultiScale(
+                        gray_image, scaleFactor=1.5, minSize=(150, 150)
+                    )
 
-                    for (x, y, l, a) in detected_faces:
+                    for x, y, l, a in detected_faces:
                         cv2.rectangle(frame, (x, y), (x + l, y + a), (0, 0, 255), 2)
-                        cv2.putText(frame, f'Luminosidade (min:110): {str(int(np.average(gray_image)))}', (x, y + (a + 30)), font, 1, (0, 0, 255))
+                        cv2.putText(
+                            frame,
+                            f"Luminosidade (min:110): {str(int(np.average(gray_image)))}",
+                            (x, y + (a + 30)),
+                            font,
+                            1,
+                            (0, 0, 255),
+                        )
                         # if cv2.waitKey(1) & 0xFF == ord('q'):  # tecla 'q' captura as fotos
                         if controller.save_picture == 1:
-                            if np.average(gray_image) > 110:  # captura apenas se a media de luminosidade for maior que 110
-                                face_image = cv2.resize(gray_image[y:y + a, x:x + l], (width, height))
-                                cv2.imwrite("pictures/person." + str(id) + "." + str(samples) + ".jpg", face_image)
+                            if (
+                                np.average(gray_image) > 110
+                            ):  # captura apenas se a media de luminosidade for maior que 110
+                                face_image = cv2.resize(
+                                    gray_image[y : y + a, x : x + l], (width, height)
+                                )
+                                cv2.imwrite(
+                                    "pictures/person."
+                                    + str(id)
+                                    + "."
+                                    + str(samples)
+                                    + ".jpg",
+                                    face_image,
+                                )
                                 samples += 1
                                 reset_capture_flag(session, 1)
 
                     (flag, encodedImage) = cv2.imencode(".jpg", frame)
-                    yield b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n'
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n"
+                        + bytearray(encodedImage)
+                        + b"\r\n"
+                    )
                 except Exception as e:
                     print(e)
             session.commit()
@@ -66,7 +102,10 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
         try:
             image = cv2.imread("camera_desligada.jpg")
             (flag, encodedImage) = cv2.imencode(".jpg", image)
-            yield b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n'
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
+            )
         except Exception as e:
             print(e)
 

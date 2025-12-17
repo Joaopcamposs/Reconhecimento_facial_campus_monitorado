@@ -3,11 +3,11 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # DATABASE_URL = "mysql+pymysql://root:@localhost:3307/iftm"  # local
-DATABASE_URL = "mysql+pymysql://root:password@iftm_db/iftm"  # docker
+DATABASE_URL = "mysql+pymysql://root:password@reconhecimento_facial_db/iftm"  # docker
 
 # root is the mysql user
 # password is mysql password
-# iftm_db is the connection
+# reconhecimento_facial_db is the connection
 # iftm is the database (schema)
 
 db_engine = create_engine(DATABASE_URL)
