@@ -1,6 +1,12 @@
+"""Training module for facial recognition classifier."""
+
+from typing import Any
+
 import cv2
 import numpy as np
-from config import PICTURES_DIR, CLASSIFIER_PATH
+from numpy.typing import NDArray
+
+from src.infra.config import CLASSIFIER_PATH, PICTURES_DIR
 
 
 class TrainingError(Exception):
@@ -9,37 +15,32 @@ class TrainingError(Exception):
     pass
 
 
-def trainLBPH():
-    """
-    Train the LBPH face recognizer using images from the pictures directory.
-    Returns a tuple (success: bool, message: str)
-    """
-    lbph = cv2.face.LBPHFaceRecognizer_create()
+def trainLBPH() -> tuple[bool, str]:
+    """Train the LBPH face recognizer with captured images."""
+    recognizer = cv2.face.LBPHFaceRecognizer_create()
 
-    def getImageAndId():
+    def getImageAndId() -> tuple[NDArray[Any], list[NDArray[Any]]]:
         # Get all jpg files from pictures directory
         paths = list(PICTURES_DIR.glob("person.*.*.jpg"))
 
         if not paths:
             raise TrainingError(
                 f"Nenhuma imagem encontrada em {PICTURES_DIR}. "
-                "Capture fotos primeiro usando o endpoint /fotos/{{camera_id}}&{{nome_pessoa}}"
+                "Capture fotos primeiro usando /captura"
             )
 
-        faces = []
-        ids = []
+        faces: list[NDArray[Any]] = []
+        ids: list[int] = []
 
         for imagePath in paths:
             try:
-                img = cv2.imread(str(imagePath))
-                if img is None:
-                    print(f"Aviso: Não foi possível ler a imagem {imagePath}")
-                    continue
-                face_image = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                # Extract ID from filename: person.{id}.{sample}.jpg
-                id = int(imagePath.stem.split(".")[1])
-                ids.append(id)
-                faces.append(face_image)
+                # Extract person_id from filename pattern: person.{id}.{sample}.jpg
+                person_id = int(imagePath.stem.split(".")[1])
+                face_image = cv2.imread(str(imagePath))
+                if face_image is not None:
+                    gray_face = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
+                    faces.append(gray_face)
+                    ids.append(person_id)
             except Exception as e:
                 print(f"Erro ao processar {imagePath}: {e}")
                 continue
@@ -53,9 +54,8 @@ def trainLBPH():
         ids, faces = getImageAndId()
 
         print(f"Treinando com {len(faces)} imagens...")
-
-        lbph.train(faces, ids)
-        lbph.write(str(CLASSIFIER_PATH))
+        recognizer.train(faces, ids)
+        recognizer.write(str(CLASSIFIER_PATH))
 
         print("Treinamento concluído!")
         return True, f"Treinamento concluído com {len(faces)} imagens."

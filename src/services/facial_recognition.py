@@ -1,58 +1,67 @@
-import cv2
+"""Facial recognition service module."""
+
 import asyncio
-from crud import get_camera_by_id, get_all_persons
-from models import CameraStatus
+from collections.abc import AsyncGenerator
+
+import cv2
+from cv2 import CascadeClassifier, VideoCapture
 from sqlalchemy.orm import Session
-from crud import CameraNotFound
-from config import (
-    HAARCASCADE_PATH,
-    CLASSIFIER_PATH,
+
+from src.entities.models import Camera, CameraStatus
+from src.infra.config import (
     CAMERA_NOT_FOUND_IMAGE,
     CAMERA_OFF_IMAGE,
-    get_webcam_capture,
-    get_ip_camera_capture,
+    CLASSIFIER_PATH,
+    HAARCASCADE_PATH,
     USE_WEBCAM_FALLBACK,
     classifier_exists,
+    get_ip_camera_capture,
+    get_webcam_capture,
 )
+from src.repositories.camera_repository import CameraNotFound, get_camera_by_id
+from src.repositories.person_repository import get_all_persons
 
 # Parameters for facial recognition
-faceDetector = cv2.CascadeClassifier(str(HAARCASCADE_PATH))
+faceDetector: CascadeClassifier = cv2.CascadeClassifier(str(HAARCASCADE_PATH))
 recognizer = cv2.face.LBPHFaceRecognizer_create()
-# Only load classifier if it exists (after training)
+
 if classifier_exists():
     recognizer.read(str(CLASSIFIER_PATH))
-font = cv2.FONT_HERSHEY_COMPLEX_SMALL
-width, height = 220, 220
+
+font: int = cv2.FONT_HERSHEY_COMPLEX_SMALL
+width: int = 220
+height: int = 220
 
 
-def verifyPerson(session: Session, id: int):
+def verifyPerson(session: Session, person_id: int) -> str | None:
+    """Verify person name by ID."""
     persons = get_all_persons(session=session)
     for p in persons:
-        if id == p.person_id:
+        if person_id == p.person_id:
             return p.name
+    return None
 
 
-def load_persons_cache():
+def load_persons_cache() -> dict[int, str]:
     """Load all persons from database into a cache dict."""
-    from database import SessionLocal
+    from src.infra.database import SessionLocal
 
+    db: Session | None = None
     try:
         db = SessionLocal()
         persons = get_all_persons(session=db)
-        cache = {p.person_id: p.name for p in persons}
-        db.close()
+        cache: dict[int, str] = {p.person_id: p.name for p in persons}
         return cache
     except Exception as e:
         print(f"Error loading persons cache: {e}")
         return {}
+    finally:
+        if db is not None:
+            db.close()
 
 
-async def stream_recognition_only():
-    """
-    Stream facial recognition with person name lookup.
-    Uses webcam directly - ideal for HTML interface.
-    """
-    # Check if classifier is trained
+async def stream_recognition_only() -> AsyncGenerator[bytes, None]:
+    """Stream facial recognition with person name lookup."""
     if not classifier_exists():
         image = cv2.imread(str(CAMERA_NOT_FOUND_IMAGE))
         cv2.putText(
@@ -64,31 +73,27 @@ async def stream_recognition_only():
             (0, 0, 255),
             2,
         )
-        (flag, encodedImage) = cv2.imencode(".jpg", image)
+        _, encodedImage = cv2.imencode(".jpg", image)
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
         )
         return
 
-    # Reload classifier
     recognizer.read(str(CLASSIFIER_PATH))
+    persons_cache: dict[int, str] = load_persons_cache()
 
-    # Load persons cache for name lookup
-    persons_cache = load_persons_cache()
-
-    # Use webcam directly
-    cameraIP = get_webcam_capture()
+    cameraIP: VideoCapture = get_webcam_capture()
     if cameraIP is None or not cameraIP.isOpened():
         image = cv2.imread(str(CAMERA_NOT_FOUND_IMAGE))
-        (flag, encodedImage) = cv2.imencode(".jpg", image)
+        _, encodedImage = cv2.imencode(".jpg", image)
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
         )
         return
 
-    frame_count = 0
+    frame_count: int = 0
     try:
         while True:
             connected, frame = cameraIP.read()
@@ -97,7 +102,6 @@ async def stream_recognition_only():
                 continue
 
             frame_count += 1
-            # Refresh persons cache every 100 frames
             if frame_count % 100 == 0:
                 persons_cache = load_persons_cache()
 
@@ -107,7 +111,6 @@ async def stream_recognition_only():
                     gray_image, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
                 )
 
-                # Draw mode indicator
                 cv2.putText(
                     frame,
                     "MODO: RECONHECIMENTO",
@@ -118,17 +121,16 @@ async def stream_recognition_only():
                     2,
                 )
 
-                for x, y, l, a in detected_faces:
+                for x, y, w, h in detected_faces:
                     face_image = cv2.resize(
-                        gray_image[y : y + a, x : x + l], (width, height)
+                        gray_image[y : y + h, x : x + w], (width, height)
                     )
-                    cv2.rectangle(frame, (x, y), (x + l, y + a), (0, 255, 0), 2)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
                     try:
-                        id, trust = recognizer.predict(face_image)
-                        # Lookup person name from cache
-                        name = (
-                            persons_cache.get(id, "Desconhecido")
+                        person_id, trust = recognizer.predict(face_image)
+                        name: str = (
+                            persons_cache.get(person_id, "Desconhecido")
                             if trust < 100
                             else "Desconhecido"
                         )
@@ -137,7 +139,7 @@ async def stream_recognition_only():
                         cv2.putText(
                             frame,
                             f"Conf: {round(trust, 1)}",
-                            (x, y + a + 20),
+                            (x, y + h + 20),
                             font,
                             1,
                             (0, 255, 0),
@@ -146,7 +148,7 @@ async def stream_recognition_only():
                     except Exception:
                         cv2.putText(frame, "?", (x, y - 10), font, 1, (0, 0, 255), 2)
 
-                (flag, encodedImage) = cv2.imencode(".jpg", frame)
+                _, encodedImage = cv2.imencode(".jpg", frame)
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n"
@@ -164,8 +166,10 @@ async def stream_recognition_only():
         cameraIP.release()
 
 
-async def stream_facial_recognition(session: Session, id_camera: int):
-    # Check if classifier is trained
+async def stream_facial_recognition(
+    session: Session, id_camera: int
+) -> AsyncGenerator[bytes, None]:
+    """Stream facial recognition from camera."""
     if not classifier_exists():
         image = cv2.imread(str(CAMERA_NOT_FOUND_IMAGE))
         cv2.putText(
@@ -177,42 +181,37 @@ async def stream_facial_recognition(session: Session, id_camera: int):
             (0, 0, 255),
             2,
         )
-        (flag, encodedImage) = cv2.imencode(".jpg", image)
+        _, encodedImage = cv2.imencode(".jpg", image)
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
         )
         return
 
-    # Reload classifier to ensure latest trained model is used
     recognizer.read(str(CLASSIFIER_PATH))
 
-    image = None
-    camera = None
-    use_webcam = False
+    camera: Camera | None = None
+    use_webcam: bool = False
 
     try:
         camera = get_camera_by_id(session=session, _id=id_camera)
     except CameraNotFound:
         camera = None
 
-    # Initialize camera capture
-    cameraIP = None
+    cameraIP: VideoCapture | None = None
 
     if camera is not None:
-        # Try to connect to IP camera
         cameraIP = get_ip_camera_capture(camera.user, camera.password, camera.camera_ip)
         if not cameraIP.isOpened():
             cameraIP.release()
             cameraIP = None
 
-    # Fallback to webcam if IP camera not available
     if cameraIP is None and USE_WEBCAM_FALLBACK:
         cameraIP = get_webcam_capture()
         use_webcam = True
         if not cameraIP.isOpened():
             image = cv2.imread(str(CAMERA_NOT_FOUND_IMAGE))
-            (flag, encodedImage) = cv2.imencode(".jpg", image)
+            _, encodedImage = cv2.imencode(".jpg", image)
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
@@ -220,16 +219,14 @@ async def stream_facial_recognition(session: Session, id_camera: int):
             return
     elif cameraIP is None:
         image = cv2.imread(str(CAMERA_NOT_FOUND_IMAGE))
-        (flag, encodedImage) = cv2.imencode(".jpg", image)
+        _, encodedImage = cv2.imencode(".jpg", image)
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
         )
         return
 
-    # For webcam mode, we run continuously until stopped
-    # For IP camera mode, we check the camera status
-    should_run = True
+    should_run: bool = True
     while should_run:
         connected, frame = cameraIP.read()
         if connected:
@@ -238,31 +235,30 @@ async def stream_facial_recognition(session: Session, id_camera: int):
                 detected_faces = faceDetector.detectMultiScale(
                     gray_image, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
                 )
-                for x, y, l, a in detected_faces:
+                for x, y, w, h in detected_faces:
                     face_image = cv2.resize(
-                        gray_image[y : y + a, x : x + l], (width, height)
+                        gray_image[y : y + h, x : x + w], (width, height)
                     )
-                    cv2.rectangle(frame, (x, y), (x + l, y + a), (0, 0, 255), 2)
-                    id, trust = recognizer.predict(face_image)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                    person_id, trust = recognizer.predict(face_image)
 
-                    name = verifyPerson(session, id)
+                    name = verifyPerson(session, person_id)
                     if name is None:
                         name = "Desconhecido"
 
-                    cv2.putText(frame, name, (x, y + (a + 30)), font, 2, (0, 0, 255))
+                    cv2.putText(frame, name, (x, y + (h + 30)), font, 2, (0, 0, 255))
                     cv2.putText(
                         frame,
                         str(f"Confianca: {round(trust, 2)}%"),
-                        (x, y + (a + 50)),
+                        (x, y + (h + 50)),
                         font,
                         1,
                         (0, 0, 255),
                     )
 
-                # resize image (optional)
                 frame = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
 
-                (flag, encodedImage) = cv2.imencode(".jpg", frame)
+                _, encodedImage = cv2.imencode(".jpg", frame)
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n"
@@ -270,25 +266,23 @@ async def stream_facial_recognition(session: Session, id_camera: int):
                     + b"\r\n"
                 )
 
-                # Yield control to event loop
                 await asyncio.sleep(0.01)
 
             except Exception as e:
                 print(e)
 
-        # Check if we should continue running
         if not use_webcam and camera:
             session.commit()
             session.refresh(camera)
             camera = get_camera_by_id(session=session, _id=id_camera)
-            if camera.status != CameraStatus.on:
+            if camera and camera.status != CameraStatus.on:
                 should_run = False
 
     cameraIP.release()
     cv2.destroyAllWindows()
     try:
         image = cv2.imread(str(CAMERA_OFF_IMAGE))
-        (flag, encodedImage) = cv2.imencode(".jpg", image)
+        _, encodedImage = cv2.imencode(".jpg", image)
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"

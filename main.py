@@ -1,11 +1,7 @@
 from fastapi import FastAPI
-import api
-from database import init_db
 
-# command to start the API server
-# uvicorn main:app --workers 4
-# SWAGGER DOCS: http://127.0.0.1:8004/docs
-
+from src.infra.database import init_db
+from src.api import routes
 
 app = FastAPI()
 
@@ -13,4 +9,4 @@ app = FastAPI()
 init_db()
 
 # include routes from api
-app.include_router(api.app)
+app.include_router(routes.app)

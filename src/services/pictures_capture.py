@@ -1,50 +1,63 @@
+"""Pictures capture service module."""
+
+import asyncio
+import time
+from collections.abc import AsyncGenerator
+from typing import Any
+
 import cv2
 import numpy as np
-import time
-import asyncio
+from cv2 import CascadeClassifier, VideoCapture
 from sqlalchemy.orm import Session
-from crud import (
-    get_camera_by_id,
-    CameraNotFound,
-    create_person,
-    get_all_persons,
+
+from src.entities.models import Camera
+from src.entities.schemas import CreateAndUpdatePerson
+from src.infra.config import (
+    CAMERA_NOT_FOUND_IMAGE,
+    CAMERA_OFF_IMAGE,
+    HAARCASCADE_PATH,
+    PICTURES_DIR,
+    USE_WEBCAM_FALLBACK,
+    get_ip_camera_capture,
+    get_webcam_capture,
+)
+from src.repositories.camera_repository import CameraNotFound, get_camera_by_id
+from src.repositories.controller_repository import (
     get_controller_by_id,
     reset_capture_flag,
 )
-from schema import CreateAndUpdatePerson
-from config import (
-    HAARCASCADE_PATH,
-    PICTURES_DIR,
-    CAMERA_NOT_FOUND_IMAGE,
-    CAMERA_OFF_IMAGE,
-    get_webcam_capture,
-    get_ip_camera_capture,
-    USE_WEBCAM_FALLBACK,
-)
+from src.repositories.person_repository import create_person, get_all_persons
 
-# Parameters for facial recognition
-classifier = cv2.CascadeClassifier(str(HAARCASCADE_PATH))
+# Face detection parameters
+SCALE_FACTOR: float = 1.1
+MIN_NEIGHBORS: int = 5
+MIN_SIZE: tuple[int, int] = (60, 60)
+
+# Classifier setup
+classifier: CascadeClassifier = cv2.CascadeClassifier(str(HAARCASCADE_PATH))
 if classifier.empty():
-    print(f"ERRO: Não foi possível carregar o classificador de {HAARCASCADE_PATH}")
-font = cv2.FONT_HERSHEY_COMPLEX_SMALL
-width, height = 220, 220
+    print(f"Warning: Could not load cascade classifier from {HAARCASCADE_PATH}")
 
-# Face detection parameters - more sensitive for better detection
-SCALE_FACTOR = 1.1  # Lower = more sensitive (was 1.5, too aggressive)
-MIN_NEIGHBORS = 5  # Higher = less false positives
-MIN_SIZE = (60, 60)  # Minimum face size in pixels
+font: int = cv2.FONT_HERSHEY_COMPLEX_SMALL
+width: int = 220
+height: int = 220
 
 
-def getNextID(session: Session):
-    nextID = len(get_all_persons(session=session)) + 1
-    return nextID
+def getNextID(session: Session) -> int:
+    """Get next available person ID."""
+    persons = get_all_persons(session)
+    if not persons:
+        return 1
+    return max(p.person_id for p in persons) + 1
 
 
-def _get_camera_capture(session: Session, camera_id: int):
-    """Helper to get camera capture (IP or webcam fallback)."""
-    camera = None
-    use_webcam = False
-    cameraIP = None
+def _get_camera_capture(
+    session: Session, camera_id: int
+) -> tuple[VideoCapture | None, bool, Camera | None]:
+    """Get camera capture object."""
+    camera: Camera | None = None
+    use_webcam: bool = False
+    cameraIP: VideoCapture | None = None
 
     try:
         camera = get_camera_by_id(session=session, _id=camera_id)
@@ -64,20 +77,23 @@ def _get_camera_capture(session: Session, camera_id: int):
     return cameraIP, use_webcam, camera
 
 
-def _yield_error_image(image_path):
-    """Helper to yield an error image."""
-    image = cv2.imread(str(image_path))
-    if image is not None:
-        (flag, encodedImage) = cv2.imencode(".jpg", image)
-        return (
-            b"--frame\r\n"
-            b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
-        )
+def _yield_error_image(image_path: Any) -> bytes | None:
+    """Generate error image frame."""
+    try:
+        image = cv2.imread(str(image_path))
+        if image is not None:
+            _, encodedImage = cv2.imencode(".jpg", image)
+            return (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
+            )
+    except Exception as e:
+        print(f"Error loading image {image_path}: {e}")
     return None
 
 
-# Global state for manual capture mode
-capture_state = {
+# Global capture state for manual capture mode
+capture_state: dict[str, Any] = {
     "should_capture": False,
     "person_id": None,
     "person_name": None,
@@ -87,25 +103,11 @@ capture_state = {
 }
 
 
-def trigger_capture():
-    """Trigger a manual capture."""
-    capture_state["should_capture"] = True
-
-
-def get_capture_state():
-    """Get current capture state."""
-    return capture_state.copy()
-
-
-def reset_capture_state():
-    """Reset capture state."""
-    capture_state["should_capture"] = False
-    capture_state["samples_captured"] = 0
-    capture_state["is_active"] = False
-
-
-def start_capture_session(person_id: int, person_name: str, max_samples: int = 20):
+def start_capture_session(
+    person_id: int, person_name: str, max_samples: int = 20
+) -> None:
     """Start a new capture session."""
+    global capture_state
     capture_state["person_id"] = person_id
     capture_state["person_name"] = person_name
     capture_state["samples_captured"] = 0
@@ -114,17 +116,35 @@ def start_capture_session(person_id: int, person_name: str, max_samples: int = 2
     capture_state["should_capture"] = False
 
 
-async def stream_video_only(camera_id: int = 0):
-    """
-    Stream video with face detection overlay.
-    Used for the HTML interface - doesn't capture, just shows video with detection.
-    Captures are triggered via the capture_state global.
-    No database session needed - uses webcam directly.
-    """
-    # Direct webcam capture without database
-    cameraIP = get_webcam_capture()
+def trigger_capture() -> None:
+    """Trigger a photo capture."""
+    global capture_state
+    capture_state["should_capture"] = True
+
+
+def get_capture_state() -> dict[str, Any]:
+    """Get current capture state."""
+    return capture_state.copy()
+
+
+def reset_capture_state() -> None:
+    """Reset capture state."""
+    global capture_state
+    capture_state = {
+        "should_capture": False,
+        "person_id": None,
+        "person_name": None,
+        "samples_captured": 0,
+        "max_samples": 20,
+        "is_active": False,
+    }
+
+
+async def stream_video_only(camera_id: int = 0) -> AsyncGenerator[bytes, None]:
+    """Stream video with face detection without database dependency."""
+    cameraIP: VideoCapture = get_webcam_capture()
+
     if camera_id > 0:
-        # For IP cameras, we'd need database but skip for now
         pass
 
     if cameraIP is None or not cameraIP.isOpened():
@@ -137,6 +157,7 @@ async def stream_video_only(camera_id: int = 0):
         while True:
             connected, frame = cameraIP.read()
             if not connected:
+                await asyncio.sleep(0.01)
                 continue
 
             try:
@@ -148,17 +169,15 @@ async def stream_video_only(camera_id: int = 0):
                     minSize=MIN_SIZE,
                 )
 
-                luminosity = int(np.average(gray_image))
-                num_faces = len(detected_faces)
+                luminosity: int = int(np.average(gray_image))
+                num_faces: int = len(detected_faces)
 
-                # Get current state
-                person_name = capture_state.get("person_name", "---")
-                samples = capture_state.get("samples_captured", 0)
-                max_samples = capture_state.get("max_samples", 20)
-                person_id = capture_state.get("person_id", 0)
-                is_active = capture_state.get("is_active", False)
+                person_name: str = capture_state.get("person_name") or "---"
+                samples: int = capture_state.get("samples_captured", 0)
+                max_samples: int = capture_state.get("max_samples", 20)
+                person_id: int = capture_state.get("person_id", 0)
+                is_active: bool = capture_state.get("is_active", False)
 
-                # Draw status on frame
                 status_text = f"Fotos: {samples}/{max_samples} | Lum: {luminosity} | Faces: {num_faces}"
                 cv2.putText(frame, status_text, (10, 30), font, 1, (0, 255, 0), 2)
 
@@ -184,23 +203,21 @@ async def stream_video_only(camera_id: int = 0):
                         1,
                     )
 
-                for x, y, l, a in detected_faces:
-                    # Draw face rectangle
+                for x, y, w, h in detected_faces:
                     color = (0, 255, 0) if is_active else (255, 165, 0)
-                    cv2.rectangle(frame, (x, y), (x + l, y + a), color, 2)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
 
                     if person_name and person_name != "---":
                         cv2.putText(frame, person_name, (x, y - 10), font, 1, color, 2)
 
-                    # Check if capture was triggered
                     if (
                         capture_state["should_capture"]
                         and is_active
                         and samples < max_samples
                     ):
-                        if luminosity >= 60:  # Minimum luminosity
+                        if luminosity >= 60:
                             face_image = cv2.resize(
-                                gray_image[y : y + a, x : x + l], (width, height)
+                                gray_image[y : y + h, x : x + w], (width, height)
                             )
                             image_path = (
                                 PICTURES_DIR / f"person.{person_id}.{samples + 1}.jpg"
@@ -209,15 +226,14 @@ async def stream_video_only(camera_id: int = 0):
                             capture_state["samples_captured"] += 1
                             capture_state["should_capture"] = False
 
-                            # Flash effect
                             cv2.rectangle(
-                                frame, (x, y), (x + l, y + a), (255, 255, 255), 4
+                                frame, (x, y), (x + w, y + h), (255, 255, 255), 4
                             )
                             print(f"Captured: {image_path}")
                         else:
                             capture_state["should_capture"] = False
 
-                (flag, encodedImage) = cv2.imencode(".jpg", frame)
+                _, encodedImage = cv2.imencode(".jpg", frame)
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n"
@@ -225,7 +241,6 @@ async def stream_video_only(camera_id: int = 0):
                     + b"\r\n"
                 )
 
-                # CRITICAL: Yield control to event loop so other requests can be processed
                 await asyncio.sleep(0.01)
 
             except Exception as e:
@@ -242,23 +257,12 @@ async def stream_pictures_capture_auto(
     samples_number: int = 20,
     capture_interval: float = 0.5,
     min_luminosity: int = 80,
-):
-    """
-    Auto-capture mode: automatically captures photos when a face is detected.
-    No need to call /capturar endpoint - captures automatically with interval.
+) -> AsyncGenerator[bytes, None]:
+    """Auto-capture mode: captures photos automatically when face is detected."""
+    samples: int = 0
+    last_capture_time: float = 0
 
-    Args:
-        session: Database session
-        camera_id: Camera ID (0 for webcam)
-        person_name: Name of the person being captured
-        samples_number: Number of photos to capture (default 20)
-        capture_interval: Seconds between captures (default 0.5)
-        min_luminosity: Minimum luminosity for capture (default 80)
-    """
-    samples = 0
-    last_capture_time = 0
-
-    person_id = getNextID(session)
+    person_id: int = getNextID(session)
 
     cameraIP, use_webcam, camera = _get_camera_capture(session, camera_id)
 
@@ -272,6 +276,7 @@ async def stream_pictures_capture_auto(
         while samples < samples_number:
             connected, frame = cameraIP.read()
             if not connected:
+                await asyncio.sleep(0.01)
                 continue
 
             try:
@@ -283,11 +288,10 @@ async def stream_pictures_capture_auto(
                     minSize=MIN_SIZE,
                 )
 
-                current_time = time.time()
-                luminosity = int(np.average(gray_image))
-                num_faces = len(detected_faces)
+                current_time: float = time.time()
+                luminosity: int = int(np.average(gray_image))
+                num_faces: int = len(detected_faces)
 
-                # Draw info on frame
                 cv2.putText(
                     frame,
                     f"Capturadas: {samples}/{samples_number} | Lum: {luminosity} | Faces: {num_faces}",
@@ -298,8 +302,8 @@ async def stream_pictures_capture_auto(
                     2,
                 )
 
-                for x, y, l, a in detected_faces:
-                    cv2.rectangle(frame, (x, y), (x + l, y + a), (0, 255, 0), 2)
+                for x, y, w, h in detected_faces:
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
                     cv2.putText(
                         frame,
                         person_name,
@@ -310,11 +314,10 @@ async def stream_pictures_capture_auto(
                         2,
                     )
 
-                    # Auto-capture with interval
                     if (current_time - last_capture_time) >= capture_interval:
                         if luminosity >= min_luminosity:
                             face_image = cv2.resize(
-                                gray_image[y : y + a, x : x + l], (width, height)
+                                gray_image[y : y + h, x : x + w], (width, height)
                             )
                             image_path = (
                                 PICTURES_DIR / f"person.{person_id}.{samples + 1}.jpg"
@@ -323,12 +326,11 @@ async def stream_pictures_capture_auto(
                             samples += 1
                             last_capture_time = current_time
 
-                            # Flash effect to indicate capture
                             cv2.rectangle(
-                                frame, (x, y), (x + l, y + a), (255, 255, 255), 4
+                                frame, (x, y), (x + w, y + h), (255, 255, 255), 4
                             )
 
-                (flag, encodedImage) = cv2.imencode(".jpg", frame)
+                _, encodedImage = cv2.imencode(".jpg", frame)
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n"
@@ -336,7 +338,6 @@ async def stream_pictures_capture_auto(
                     + b"\r\n"
                 )
 
-                # Yield control to event loop
                 await asyncio.sleep(0.01)
 
             except Exception as e:
@@ -368,14 +369,15 @@ async def stream_pictures_capture_auto(
         )
         cv2.putText(
             completion_frame,
-            "Execute /treinamento para treinar o modelo.",
+            "Execute /treinamento para treinar o modelo",
             (50, 300),
             font,
             1,
-            (255, 255, 0),
+            (0, 255, 255),
             1,
         )
-        (flag, encodedImage) = cv2.imencode(".jpg", completion_frame)
+
+        _, encodedImage = cv2.imencode(".jpg", completion_frame)
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
@@ -386,21 +388,19 @@ async def stream_pictures_capture_auto(
     # Register person in database
     if samples > 0:
         person = CreateAndUpdatePerson(person_id=person_id, name=person_name)
-        create_person(person_info=person, session=session)
+        create_person(session=session, person_info=person)
 
 
-async def stream_pictures_capture(session: Session, camera_id: int, person_name: str):
-    """
-    Manual capture mode: requires calling /capturar endpoint to capture each photo.
-    Shows video stream with face detection overlay.
-    """
-    samples = 1
-    samples_number = 20
+async def stream_pictures_capture(
+    session: Session, person_name: str, camera_id: int
+) -> AsyncGenerator[bytes, None]:
+    """Legacy capture mode using controller flag."""
+    samples: int = 1
+    samples_number: int = 20
     controller = None
 
-    person_id = getNextID(session)
+    person_id: int = getNextID(session)
 
-    # Get controller
     try:
         controller = get_controller_by_id(session=session, _id=1)
     except Exception as e:
@@ -418,6 +418,7 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
         while samples <= samples_number:
             connected, frame = cameraIP.read()
             if not connected:
+                await asyncio.sleep(0.01)
                 continue
 
             try:
@@ -429,10 +430,9 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
                     minSize=MIN_SIZE,
                 )
 
-                luminosity = int(np.average(gray_image))
-                num_faces = len(detected_faces)
+                luminosity: int = int(np.average(gray_image))
+                num_faces: int = len(detected_faces)
 
-                # Draw status on frame
                 cv2.putText(
                     frame,
                     f"Fotos: {samples - 1}/{samples_number} | Lum: {luminosity} | Faces: {num_faces}",
@@ -443,8 +443,8 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
                     2,
                 )
 
-                for x, y, l, a in detected_faces:
-                    cv2.rectangle(frame, (x, y), (x + l, y + a), (0, 0, 255), 2)
+                for x, y, w, h in detected_faces:
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
                     cv2.putText(
                         frame,
                         f"{person_name}",
@@ -454,11 +454,10 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
                         (0, 0, 255),
                     )
 
-                    # Check if capture was requested
                     if controller and controller.save_picture == 1:
                         if luminosity > 80:
                             face_image = cv2.resize(
-                                gray_image[y : y + a, x : x + l], (width, height)
+                                gray_image[y : y + h, x : x + w], (width, height)
                             )
                             image_path = (
                                 PICTURES_DIR / f"person.{person_id}.{samples}.jpg"
@@ -466,12 +465,11 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
                             cv2.imwrite(str(image_path), face_image)
                             samples += 1
                             reset_capture_flag(session, 1)
-                            # Flash effect
                             cv2.rectangle(
-                                frame, (x, y), (x + l, y + a), (255, 255, 255), 4
+                                frame, (x, y), (x + w, y + h), (255, 255, 255), 4
                             )
 
-                (flag, encodedImage) = cv2.imencode(".jpg", frame)
+                _, encodedImage = cv2.imencode(".jpg", frame)
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n"
@@ -479,13 +477,11 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
                     + b"\r\n"
                 )
 
-                # Yield control to event loop
                 await asyncio.sleep(0.01)
 
             except Exception as e:
                 print(f"Error in capture: {e}")
 
-            # Refresh controller state
             if controller:
                 try:
                     session.refresh(controller)
@@ -496,12 +492,10 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
     finally:
         cameraIP.release()
 
-    # Show completion
     completion_frame = _yield_error_image(CAMERA_OFF_IMAGE)
     if completion_frame:
         yield completion_frame
 
-    # Register person
     if samples > 1:
         person = CreateAndUpdatePerson(person_id=person_id, name=person_name)
-        create_person(person_info=person, session=session)
+        create_person(session=session, person_info=person)

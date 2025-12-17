@@ -1,52 +1,45 @@
-"""
-Video file analysis for facial recognition.
-Allows analyzing pre-recorded video files instead of live streams.
-"""
+"""Video file analysis for facial recognition."""
+
+from collections.abc import AsyncGenerator
+from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
-from pathlib import Path
 from sqlalchemy.orm import Session
-from crud import get_all_persons
-from config import (
-    HAARCASCADE_PATH,
-    CLASSIFIER_PATH,
-    classifier_exists,
-)
 
-# Parameters for facial recognition
+from src.infra.config import CLASSIFIER_PATH, HAARCASCADE_PATH, classifier_exists
+from src.repositories.person_repository import get_all_persons
+
+# Initialize face detector and recognizer
 faceDetector = cv2.CascadeClassifier(str(HAARCASCADE_PATH))
 recognizer = cv2.face.LBPHFaceRecognizer_create()
-font = cv2.FONT_HERSHEY_COMPLEX_SMALL
-width, height = 220, 220
+
+if classifier_exists():
+    recognizer.read(str(CLASSIFIER_PATH))
+
+font: int = cv2.FONT_HERSHEY_COMPLEX_SMALL
+width: int = 220
+height: int = 220
 
 
-def verifyPerson(session: Session, id: int):
-    """Get person name by ID."""
+def verifyPerson(session: Session, person_id: int) -> str:
+    """Verify person name by ID."""
     persons = get_all_persons(session=session)
     for p in persons:
-        if id == p.person_id:
+        if person_id == p.person_id:
             return p.name
     return "Desconhecido"
 
 
 async def analyze_video_file(
-    session: Session, video_path: str, output_path: str = None, skip_frames: int = 2
-):
-    """
-    Analyze a video file and perform facial recognition on it.
-
-    Args:
-        session: Database session
-        video_path: Path to the input video file
-        output_path: Optional path to save the processed video
-        skip_frames: Process every Nth frame (default 2 for performance)
-
-    Yields:
-        MJPEG frames for streaming
-    """
+    session: Session,
+    video_path: str,
+    output_path: str | None = None,
+    skip_frames: int = 2,
+) -> AsyncGenerator[bytes, None]:
+    """Analyze a video file and perform facial recognition."""
     if not classifier_exists():
-        # Return error frame
         error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
         cv2.putText(
             error_frame,
@@ -59,33 +52,31 @@ async def analyze_video_file(
         )
         cv2.putText(
             error_frame,
-            "Execute GET /treinamento primeiro.",
+            "Execute /treinamento primeiro",
             (50, 250),
             font,
             1,
             (255, 255, 255),
             1,
         )
-        (flag, encodedImage) = cv2.imencode(".jpg", error_frame)
+        _, encodedImage = cv2.imencode(".jpg", error_frame)
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
         )
         return
 
-    # Load classifier
     recognizer.read(str(CLASSIFIER_PATH))
 
-    # Open video file
-    video_path = Path(video_path)
-    if not video_path.exists():
+    video_path_obj = Path(video_path)
+    if not video_path_obj.exists():
         error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
         cv2.putText(
             error_frame,
             "Erro: Video nao encontrado",
             (50, 200),
             font,
-            1,
+            1.5,
             (0, 0, 255),
             2,
         )
@@ -98,14 +89,14 @@ async def analyze_video_file(
             (255, 255, 255),
             1,
         )
-        (flag, encodedImage) = cv2.imencode(".jpg", error_frame)
+        _, encodedImage = cv2.imencode(".jpg", error_frame)
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
         )
         return
 
-    cap = cv2.VideoCapture(str(video_path))
+    cap = cv2.VideoCapture(str(video_path_obj))
 
     if not cap.isOpened():
         error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -118,31 +109,28 @@ async def analyze_video_file(
             (0, 0, 255),
             2,
         )
-        (flag, encodedImage) = cv2.imencode(".jpg", error_frame)
+        _, encodedImage = cv2.imencode(".jpg", error_frame)
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
         )
         return
 
-    # Get video properties
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames: int = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps: float = cap.get(cv2.CAP_PROP_FPS)
 
-    # Setup video writer if output path specified
     video_writer = None
     if output_path:
-        output_path = Path(output_path)
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_width: int = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height: int = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         video_writer = cv2.VideoWriter(
-            str(output_path), fourcc, fps, (frame_width, frame_height)
+            output_path, fourcc, fps, (frame_width, frame_height)
         )
 
-    frame_count = 0
-    faces_detected = 0
-    recognized_persons = {}
+    frame_count: int = 0
+    faces_detected: int = 0
+    recognized_persons: dict[str, dict[str, Any]] = {}
 
     try:
         while True:
@@ -152,7 +140,6 @@ async def analyze_video_file(
 
             frame_count += 1
 
-            # Skip frames for performance
             if frame_count % skip_frames != 0:
                 continue
 
@@ -162,18 +149,17 @@ async def analyze_video_file(
                     gray_image, scaleFactor=1.5, minSize=(30, 30)
                 )
 
-                for x, y, l, a in detected_faces:
+                for x, y, w, h in detected_faces:
                     faces_detected += 1
                     face_image = cv2.resize(
-                        gray_image[y : y + a, x : x + l], (width, height)
+                        gray_image[y : y + h, x : x + w], (width, height)
                     )
-                    cv2.rectangle(frame, (x, y), (x + l, y + a), (0, 255, 0), 2)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
                     try:
-                        id, trust = recognizer.predict(face_image)
-                        name = verifyPerson(session, id)
+                        person_id, trust = recognizer.predict(face_image)
+                        name = verifyPerson(session, person_id)
 
-                        # Track recognized persons
                         if name != "Desconhecido":
                             if name not in recognized_persons:
                                 recognized_persons[name] = {
@@ -188,33 +174,30 @@ async def analyze_video_file(
                         cv2.putText(
                             frame,
                             f"Conf: {round(trust, 1)}",
-                            (x, y + a + 20),
+                            (x, y + h + 20),
                             font,
-                            0.8,
+                            1,
                             (0, 255, 0),
                             1,
                         )
                     except Exception:
                         cv2.putText(frame, "Erro", (x, y - 10), font, 1, (0, 0, 255), 2)
 
-                # Draw progress info
-                progress = int((frame_count / total_frames) * 100)
+                progress: int = int((frame_count / total_frames) * 100)
                 cv2.putText(
                     frame,
-                    f"Frame: {frame_count}/{total_frames} ({progress}%) | Faces: {faces_detected}",
+                    f"Progresso: {progress}% | Faces: {faces_detected}",
                     (10, 30),
                     font,
-                    0.8,
+                    1,
                     (255, 255, 0),
                     1,
                 )
 
-                # Write to output video if specified
                 if video_writer:
                     video_writer.write(frame)
 
-                # Encode and yield frame
-                (flag, encodedImage) = cv2.imencode(".jpg", frame)
+                _, encodedImage = cv2.imencode(".jpg", frame)
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n"
@@ -243,7 +226,7 @@ async def analyze_video_file(
     )
     cv2.putText(
         summary_frame,
-        f"Total de frames: {frame_count}",
+        f"Frames processados: {frame_count}",
         (50, 100),
         font,
         1,
@@ -260,14 +243,14 @@ async def analyze_video_file(
         1,
     )
 
-    y_pos = 180
+    y_pos: int = 180
     cv2.putText(
         summary_frame,
         "Pessoas reconhecidas:",
         (50, y_pos),
         font,
         1,
-        (255, 255, 0),
+        (0, 255, 255),
         1,
     )
     y_pos += 30
@@ -275,16 +258,16 @@ async def analyze_video_file(
     for name, data in recognized_persons.items():
         cv2.putText(
             summary_frame,
-            f"  - {name}: {data['count']} deteccoes",
+            f"  {name}: {data['count']} deteccoes",
             (50, y_pos),
             font,
-            0.8,
+            1,
             (255, 255, 255),
             1,
         )
         y_pos += 25
 
-    (flag, encodedImage) = cv2.imencode(".jpg", summary_frame)
+    _, encodedImage = cv2.imencode(".jpg", summary_frame)
     yield (
         b"--frame\r\n"
         b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
@@ -292,33 +275,28 @@ async def analyze_video_file(
 
 
 def analyze_video_file_sync(
-    session: Session, video_path: str, output_path: str = None
-) -> dict:
-    """
-    Synchronous version that returns a summary instead of streaming.
-
-    Returns:
-        Dictionary with analysis results
-    """
+    session: Session, video_path: str, output_path: str | None = None
+) -> dict[str, Any]:
+    """Synchronous version that returns a summary instead of streaming."""
     if not classifier_exists():
         return {"status": "error", "message": "Modelo não treinado"}
 
     recognizer.read(str(CLASSIFIER_PATH))
 
-    video_path = Path(video_path)
-    if not video_path.exists():
+    video_path_obj = Path(video_path)
+    if not video_path_obj.exists():
         return {"status": "error", "message": f"Vídeo não encontrado: {video_path}"}
 
-    cap = cv2.VideoCapture(str(video_path))
+    cap = cv2.VideoCapture(str(video_path_obj))
     if not cap.isOpened():
         return {"status": "error", "message": "Não foi possível abrir o vídeo"}
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames: int = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps: float = cap.get(cv2.CAP_PROP_FPS)
 
-    frame_count = 0
-    faces_detected = 0
-    recognized_persons = {}
+    frame_count: int = 0
+    faces_detected: int = 0
+    recognized_persons: dict[str, dict[str, Any]] = {}
 
     while True:
         ret, frame = cap.read()
@@ -327,7 +305,6 @@ def analyze_video_file_sync(
 
         frame_count += 1
 
-        # Process every 3rd frame for speed
         if frame_count % 3 != 0:
             continue
 
@@ -337,21 +314,21 @@ def analyze_video_file_sync(
                 gray_image, scaleFactor=1.5, minSize=(30, 30)
             )
 
-            for x, y, l, a in detected_faces:
+            for x, y, w, h in detected_faces:
                 faces_detected += 1
                 face_image = cv2.resize(
-                    gray_image[y : y + a, x : x + l], (width, height)
+                    gray_image[y : y + h, x : x + w], (width, height)
                 )
 
                 try:
-                    id, trust = recognizer.predict(face_image)
-                    name = verifyPerson(session, id)
+                    person_id, trust = recognizer.predict(face_image)
+                    name = verifyPerson(session, person_id)
 
                     if name not in recognized_persons:
                         recognized_persons[name] = {
                             "count": 0,
                             "best_confidence": float("inf"),
-                            "person_id": id,
+                            "person_id": person_id,
                         }
                     recognized_persons[name]["count"] += 1
                     if trust < recognized_persons[name]["best_confidence"]:
@@ -364,8 +341,7 @@ def analyze_video_file_sync(
 
     cap.release()
 
-    # Format results
-    persons_list = []
+    persons_list: list[dict[str, Any]] = []
     for name, data in recognized_persons.items():
         persons_list.append(
             {

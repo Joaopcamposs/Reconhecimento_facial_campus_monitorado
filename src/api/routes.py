@@ -1,46 +1,57 @@
-from time import sleep
 from pathlib import Path
+from time import sleep
 
 from cv2 import VideoCapture
-from fastapi import APIRouter, Depends, BackgroundTasks, UploadFile, File, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
 from fastapi.responses import HTMLResponse
-from starlette.responses import StreamingResponse
-from database import get_db
 from sqlalchemy.orm import Session
-from pictures_capture import (
+from starlette.responses import StreamingResponse
+
+from src.entities.schemas import CreateAndUpdateCamera, CreateAndUpdatePerson
+from src.infra.config import (
+    BASE_DIR,
+    PICTURES_DIR,
+    classifier_exists,
+    get_webcam_capture,
+)
+from src.infra.database import get_db
+from src.repositories.camera_repository import (
+    create_camera,
+    get_all_cameras,
+    get_camera_by_id,
+    remove_camera,
+    update_camera,
+)
+from src.repositories.controller_repository import set_capture_flag
+from src.repositories.person_repository import (
+    create_person,
+    get_all_persons,
+    get_person_by_id,
+    remove_person,
+    update_person,
+)
+from src.services.facial_recognition import (
+    stream_facial_recognition,
+    stream_recognition_only,
+)
+from src.services.pictures_capture import (
+    get_capture_state,
+    reset_capture_state,
+    start_capture_session,
     stream_pictures_capture,
     stream_pictures_capture_auto,
     stream_video_only,
     trigger_capture,
-    get_capture_state,
-    reset_capture_state,
-    start_capture_session,
 )
-from schema import CreateAndUpdateCamera, CreateAndUpdatePerson
-from crud import (
-    create_camera,
-    get_camera_by_id,
-    get_all_cameras,
-    update_camera,
-    remove_camera,
-    get_all_persons,
-    get_person_by_id,
-    update_person,
-    create_person,
-    remove_person,
-    set_capture_flag,
-)
-from training import trainLBPH
-from facial_recognition import stream_facial_recognition, stream_recognition_only
-from config import PICTURES_DIR, classifier_exists, get_webcam_capture, BASE_DIR
-from video_analysis import analyze_video_file, analyze_video_file_sync
+from src.services.training import trainLBPH
+from src.services.video_analysis import analyze_video_file, analyze_video_file_sync
 
 # Directory for uploaded videos
-VIDEOS_DIR = BASE_DIR / "videos"
+VIDEOS_DIR: Path = BASE_DIR / "videos"
 VIDEOS_DIR.mkdir(exist_ok=True)
 
 # Directory for templates
-TEMPLATES_DIR = BASE_DIR / "templates"
+TEMPLATES_DIR: Path = BASE_DIR / "templates"
 
 app = APIRouter()
 
@@ -497,10 +508,6 @@ def pagina_captura(session: Session = Depends(get_db)):
     Página HTML para captura de fotos com visualização em tempo real.
     Acesse no navegador para usar a interface gráfica.
     """
-    state = get_capture_state()
-    person_name = state.get("person_name") or "Não iniciado"
-    person_id = state.get("person_id") or 0
-
     html_content = """
     <!DOCTYPE html>
     <html lang="pt-BR">

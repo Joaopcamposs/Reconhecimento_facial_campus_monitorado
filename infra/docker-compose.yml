@@ -16,7 +16,7 @@ services:
   reconhecimento_facial_api:
     container_name: reconhecimento_facial_api
     build:
-      context: .
+      context: ../src/infra
       dockerfile: Dockerfile
     depends_on:
       reconhecimento_facial_db:
@@ -29,7 +29,3 @@ services:
     volumes:
       - ./pictures:/reconhecimento_facial/pictures
       - ./classifierLBPH.yml:/reconhecimento_facial/classifierLBPH.yml
-
-  # Alternative service for local development with webcam support
-  # Run with: docker-compose up reconhecimento_facial_db && python -m uvicorn main:app --host 0.0.0.0 --port 8004
-  # This allows webcam access which is not possible inside Docker containers

@@ -5,7 +5,7 @@ FROM python:3.11-slim
 WORKDIR /reconhecimento_facial
 
 # copiar projeto
-COPY . .
+COPY ../src/infra .
 
 # instalar dependencias
 RUN apt-get update && apt-get install -y \

@@ -34,10 +34,10 @@ uv sync --extra test
 
 ```bash
 # Iniciar apenas o MySQL
-docker-compose up -d reconhecimento_facial_db
+docker-compose -f src/infra/docker-compose.yml up -d reconhecimento_facial_db
 
 # Aguardar o banco estar pronto
-docker-compose logs -f reconhecimento_facial_db
+docker-compose -f src/infra/docker-compose.yml logs -f reconhecimento_facial_db
 ```
 
 ### 3. Iniciar a API
@@ -47,7 +47,7 @@ docker-compose logs -f reconhecimento_facial_db
 uvicorn main:app --host 0.0.0.0 --port 8004 --reload
 
 # Ou usando Docker completo (sem webcam)
-docker-compose up -d --build
+docker-compose -f src/infra/docker-compose.yml up -d --build
 ```
 
 ## Uso
@@ -156,17 +156,30 @@ pytest
 ## Arquitetura
 
 ```
-├── api.py              # Endpoints da API
-├── config.py           # Configurações e paths
-├── crud.py             # Operações de banco de dados
-├── database.py         # Conexão com banco de dados
-├── facial_recognition.py # Reconhecimento facial
-├── models.py           # Modelos SQLAlchemy
-├── pictures_capture.py # Captura de fotos
-├── schema.py           # Schemas Pydantic
-├── training.py         # Treinamento do modelo
-├── pictures/           # Diretório de fotos capturadas
-└── tests/              # Testes automatizados
+├── main.py                 # Ponto de entrada da aplicação
+├── api.py                  # Endpoints da API (FastAPI Router)
+├── src/
+│   ├── entities/           # Modelos e schemas
+│   │   ├── models.py       # Modelos SQLAlchemy (Camera, Person, Controller)
+│   │   └── schemas.py      # Schemas Pydantic
+│   ├── repositories/       # Camada de acesso a dados
+│   │   ├── camera_repository.py
+│   │   ├── person_repository.py
+│   │   └── controller_repository.py
+│   ├── services/           # Lógica de negócio
+│   │   ├── facial_recognition.py  # Reconhecimento facial
+│   │   ├── pictures_capture.py    # Captura de fotos
+│   │   ├── training.py            # Treinamento do modelo LBPH
+│   │   └── video_analysis.py      # Análise de arquivos de vídeo
+│   └── infra/              # Infraestrutura
+│       ├── config.py       # Configurações e paths
+│       ├── database.py     # Conexão SQLAlchemy
+│       ├── Dockerfile      # Container da aplicação
+│       └── docker-compose.yml
+├── pictures/               # Fotos capturadas
+├── videos/                 # Vídeos para análise
+├── templates/              # Templates HTML
+└── tests/                  # Testes automatizados
 ```
 
 ## Observações

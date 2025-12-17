@@ -7,4 +7,4 @@ ruff:
 	ruff format . && ruff check . --fix
 
 docker-build-up-compose:
-	docker-compose -f docker-compose.yml -p $(COMPOSE_NAME) up --build -d
+	docker-compose -f infra/docker-compose.yml -p $(COMPOSE_NAME) up --build -d
