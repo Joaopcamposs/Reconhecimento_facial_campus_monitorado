@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captura de Fotos - Reconhecimento Facial</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: white;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #00d4ff;
+        }
+        .info-bar {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid #00d4ff;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .info-item span {
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 20px;
+        }
+        @media (max-width: 900px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        .video-container {
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        .video-container img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .controls {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .control-section {
+            margin-bottom: 20px;
+        }
+        .control-section h3 {
+            color: #00d4ff;
+            margin-bottom: 10px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .btn {
+            width: 100%;
+            padding: 15px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 10px;
+        }
+        .btn-capture {
+            background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+            color: white;
+        }
+        .btn-capture:hover {
+            transform: scale(1.02);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+        }
+        .btn-capture:active {
+            transform: scale(0.98);
+        }
+        .btn-capture:disabled {
+            background: #555;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-train {
+            background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+            color: white;
+        }
+        .btn-train:hover {
+            box-shadow: 0 5px 20px rgba(76, 175, 80, 0.4);
+        }
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .counter {
+            text-align: center;
+            padding: 20px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .counter .number {
+            font-size: 48px;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        .counter .label {
+            font-size: 14px;
+            color: #aaa;
+        }
+        .photos-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .photo-thumb {
+            aspect-ratio: 1;
+            background: #333;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #666;
+        }
+        .photo-thumb.captured {
+            background: #00d4ff;
+            color: white;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .status.success {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+        .status.error {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+        .status.info {
+            background: rgba(0, 212, 255, 0.2);
+            color: #00d4ff;
+        }
+        .instructions {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .instructions h4 {
+            color: #ffc107;
+            margin-bottom: 10px;
+        }
+        .instructions ul {
+            margin-left: 20px;
+        }
+        .instructions li {
+            margin-bottom: 5px;
+            color: #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📷 Captura de Fotos para Reconhecimento Facial</h1>
+        
+        <div class="info-bar">
+            <div class="info-item">
+                <span>Pessoa:</span> <span id="personName">{{person_name}}</span>
+            </div>
+            <div class="info-item">
+                <span>ID:</span> <span id="personId">{{person_id}}</span>
+            </div>
+            <div class="info-item">
+                <span>Câmera:</span> <span id="cameraType">{{camera_type}}</span>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h4>📋 Instruções</h4>
+            <ul>
+                <li>Posicione seu rosto no centro da câmera</li>
+                <li>Aguarde a detecção do rosto (quadrado verde)</li>
+                <li>Clique em "CAPTURAR FOTO" quando estiver pronto</li>
+                <li>Capture pelo menos 20 fotos em diferentes ângulos</li>
+                <li>Após capturar, clique em "Treinar Modelo"</li>
+            </ul>
+        </div>
+        
+        <div class="main-content">
+            <div class="video-container">
+                <img id="videoStream" src="/stream/video/{{camera_id}}" alt="Video Stream">
+            </div>
+            
+            <div class="controls">
+                <div class="counter">
+                    <div class="number" id="photoCount">0</div>
+                    <div class="label">fotos capturadas</div>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Captura</h3>
+                    <button class="btn btn-capture" id="btnCapture" onclick="capturePhoto()">
+                        📸 CAPTURAR FOTO
+                    </button>
+                    <button class="btn btn-secondary" onclick="captureMultiple(5)">
+                        Capturar 5 fotos automático
+                    </button>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Fotos Capturadas</h3>
+                    <div class="photos-grid" id="photosGrid">
+                        <!-- Photos will be added here -->
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Ações</h3>
+                    <button class="btn btn-train" onclick="trainModel()">
+                        🧠 Treinar Modelo
+                    </button>
+                    <button class="btn btn-secondary" onclick="window.location.href='/video/webcam'">
+                        👁️ Testar Reconhecimento
+                    </button>
+                    <button class="btn btn-secondary" onclick="checkStatus()">
+                        📊 Ver Status
+                    </button>
+                </div>
+                
+                <div id="statusMessage" class="status info" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let photoCount = 0;
+        const maxPhotos = 20;
+        const personName = "{{person_name}}";
+        const personId = "{{person_id}}";
+        const cameraId = "{{camera_id}}";
+        
+        // Update photo count display
+        function updatePhotoCount() {
+            document.getElementById('photoCount').textContent = photoCount;
+            updatePhotosGrid();
+        }
+        
+        // Update photos grid
+        function updatePhotosGrid() {
+            const grid = document.getElementById('photosGrid');
+            grid.innerHTML = '';
+            for (let i = 1; i <= maxPhotos; i++) {
+                const div = document.createElement('div');
+                div.className = 'photo-thumb' + (i <= photoCount ? ' captured' : '');
+                div.textContent = i;
+                grid.appendChild(div);
+            }
+        }
+        
+        // Show status message
+        function showStatus(message, type) {
+            const status = document.getElementById('statusMessage');
+            status.textContent = message;
+            status.className = 'status ' + type;
+            status.style.display = 'block';
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
+        }
+        
+        // Capture single photo
+        async function capturePhoto() {
+            const btn = document.getElementById('btnCapture');
+            btn.disabled = true;
+            btn.textContent = '⏳ Capturando...';
+            
+            try {
+                const response = await fetch('/capturar', { method: 'POST' });
+                const data = await response.json();
+                
+                photoCount++;
+                updatePhotoCount();
+                showStatus('Foto capturada com sucesso!', 'success');
+                
+                // Flash effect on video
+                const video = document.getElementById('videoStream');
+                video.style.filter = 'brightness(2)';
+                setTimeout(() => {
+                    video.style.filter = 'brightness(1)';
+                }, 100);
+                
+            } catch (error) {
+                showStatus('Erro ao capturar: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📸 CAPTURAR FOTO';
+            }
+        }
+        
+        // Capture multiple photos automatically
+        async function captureMultiple(count) {
+            showStatus(`Capturando ${count} fotos automaticamente...`, 'info');
+            for (let i = 0; i < count; i++) {
+                await capturePhoto();
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            showStatus(`${count} fotos capturadas!`, 'success');
+        }
+        
+        // Train model
+        async function trainModel() {
+            showStatus('Treinando modelo...', 'info');
+            try {
+                const response = await fetch('/treinamento');
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showStatus('Modelo treinado com sucesso!', 'success');
+                } else {
+                    showStatus('Erro: ' + data.message, 'error');
+                }
+            } catch (error) {
+                showStatus('Erro ao treinar: ' + error.message, 'error');
+            }
+        }
+        
+        // Check status
+        async function checkStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                showStatus(`Fotos: ${data.pictures_count} | Modelo: ${data.classifier_trained ? 'Treinado' : 'Não treinado'}`, 'info');
+            } catch (error) {
+                showStatus('Erro ao verificar status', 'error');
+            }
+        }
+        
+        // Initialize
+        updatePhotosGrid();
+        
+        // Keyboard shortcut - Space to capture
+        document.addEventListener('keydown', function(e) {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                capturePhoto();
+            }
+        });
+    </script>
+</body>
+</html>

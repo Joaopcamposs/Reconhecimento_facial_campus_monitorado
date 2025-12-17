@@ -7,6 +7,11 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: iftm
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 5s
+      retries: 10
+      interval: 5s
 
   reconhecimento_facial_api:
     container_name: reconhecimento_facial_api
@@ -14,8 +19,17 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      - reconhecimento_facial_db
+      reconhecimento_facial_db:
+        condition: service_healthy
     ports:
       - "8004:8000"
     environment:
-      IN_DOCKER: true
+      IN_DOCKER: "true"
+      USE_WEBCAM_FALLBACK: "false"
+    volumes:
+      - ./pictures:/reconhecimento_facial/pictures
+      - ./classifierLBPH.yml:/reconhecimento_facial/classifierLBPH.yml
+
+  # Alternative service for local development with webcam support
+  # Run with: docker-compose up reconhecimento_facial_db && python -m uvicorn main:app --host 0.0.0.0 --port 8004
+  # This allows webcam access which is not possible inside Docker containers

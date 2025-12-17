@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 import api
-from crud import create_db
+from database import init_db
 
 # command to start the API server
 # uvicorn main:app --workers 4
@@ -9,7 +9,8 @@ from crud import create_db
 
 app = FastAPI()
 
-create_db()
+# Initialize database tables using SQLAlchemy
+init_db()
 
 # include routes from api
 app.include_router(api.app)

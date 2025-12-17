@@ -26,6 +26,9 @@ RUN pip install --upgrade pip
 RUN pip install uv
 RUN uv sync
 
+# Criar diretório de imagens
+RUN mkdir -p /reconhecimento_facial/pictures
+
 # Adiciona o .venv/bin ao PATH do container
 ENV PATH="/reconhecimento_facial/.venv/bin:$PATH"
 ENV PYTHONPATH=/reconhecimento_facial

@@ -4,6 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+Base = declarative_base()
+
 
 def obter_uri_do_banco_de_dados(eh_teste: bool = False) -> str:
     ambiente_de_teste = eh_teste or os.getenv("TEST_ENV", False)
@@ -27,7 +29,27 @@ DATABASE_URL = obter_uri_do_banco_de_dados()
 db_engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
 
-Base = declarative_base()
+
+def init_db():
+    """Initialize database tables using SQLAlchemy models."""
+    from models import Camera, Person, Controller  # noqa: F401
+
+    Base.metadata.create_all(bind=db_engine)
+
+    # Create default controller if not exists
+    db = SessionLocal()
+    try:
+        from models import Controller
+
+        controller = db.query(Controller).filter(Controller.capture_id == 1).first()
+        if not controller:
+            controller = Controller(capture_id=1, save_picture=0)
+            db.add(controller)
+            db.commit()
+    except Exception as e:
+        print(f"Error initializing controller: {e}")
+    finally:
+        db.close()
 
 
 def get_db():
