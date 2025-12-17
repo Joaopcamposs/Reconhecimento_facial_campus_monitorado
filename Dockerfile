@@ -8,7 +8,13 @@ WORKDIR /reconhecimento_facial
 COPY . .
 
 # instalar dependencias
-RUN apt-get update && apt-get -y install python3-lxml python3-dev && apt-get -y install nginx && apt-get clean
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    python3-lxml  \
+    python3-dev \
+    nginx \
+    && rm -rf /var/lib/apt/lists/*
 
 # configurar variáveis de ambiente de linguagem e horario
 ENV LANG pt_BR.UTF-8

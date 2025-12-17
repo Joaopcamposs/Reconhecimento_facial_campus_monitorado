@@ -18,7 +18,7 @@ def get_camera_by_id(session: Session, _id: int) -> Camera:
     camera = session.query(Camera).get(_id)
 
     if camera is None:
-        raise CameraNotFound
+        return None
 
     return camera
 
@@ -158,8 +158,11 @@ def reset_capture_flag(session: Session, _id: int):
 def create_db():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+    from database import obter_uri_do_banco_de_dados
 
-    engine = create_engine("mysql+pymysql://root:password@reconhecimento_facial_db/")
+    url_banco = obter_uri_do_banco_de_dados()
+    url_banco = url_banco.replace("iftm", "")
+    engine = create_engine(url_banco)
     Session = sessionmaker(engine)
     try:
         with Session.begin() as session:

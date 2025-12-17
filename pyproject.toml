@@ -10,6 +10,6 @@ dependencies = [
     "PyMySQL==1.0.2",
     "SQLAlchemy==1.4.35",
     "cryptography==37.0.0",
-    "opencv-contrib-python==4.5.5.64",
+    "opencv-contrib-python>=4.8.0",
     "ruff>=0.14.9",
 ]

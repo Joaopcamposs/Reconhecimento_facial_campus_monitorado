@@ -3,9 +3,10 @@ services:
     container_name: reconhecimento_facial_db
     image: mysql:latest
     ports:
-      - "3309:3306"
+      - "33061:3306"
     environment:
       MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: iftm
 
   reconhecimento_facial_api:
     container_name: reconhecimento_facial_api
@@ -16,3 +17,5 @@ services:
       - reconhecimento_facial_db
     ports:
       - "8004:8000"
+    environment:
+      IN_DOCKER: true

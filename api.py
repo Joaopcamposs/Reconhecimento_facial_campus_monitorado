@@ -1,5 +1,6 @@
 from time import sleep
-import cv2
+
+from cv2 import VideoCapture
 from fastapi import APIRouter, Depends, BackgroundTasks
 from starlette.responses import StreamingResponse
 from database import get_db
@@ -196,7 +197,7 @@ def capturar(session: Session = Depends(get_db)):
 @app.get("/background_cameras")
 def iniciar_cameras_background(session: Session = Depends(get_db)):
     camera = get_camera_by_id(session, 1)
-    camera_ip = cv2.VideoCapture(
+    camera_ip = VideoCapture(
         f"rtsp://{camera.user}:{camera.password}@{camera.camera_ip}/"
     )
     while True:

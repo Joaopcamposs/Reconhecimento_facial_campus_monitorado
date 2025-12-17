@@ -41,10 +41,11 @@ async def stream_pictures_capture(session: Session, camera_id: int, person_name:
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + bytearray(encodedImage) + b"\r\n"
         )
-    cameraIP = cv2.VideoCapture(
-        f"rtsp://{camera.user}:{camera.password}@{camera.camera_ip}/"
-    )
-    # cameraIP = cv2.VideoCapture(0)  #Hardcoded WebCam
+    cameraIP = cv2.VideoCapture(0)  #Hardcoded WebCam
+    if camera:
+        cameraIP = cv2.VideoCapture(
+            f"rtsp://{camera.user}:{camera.password}@{camera.camera_ip}/"
+        )
     if camera:
         while samples <= samples_number:
             connected, frame = cameraIP.read()
